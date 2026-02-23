@@ -1,0 +1,25 @@
+name: LiveKit 2000 Viewers Stresstest
+on: workflow_dispatch
+
+jobs:
+  load-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Dit start 10 aparte virtuele servers tegelijkertijd op!
+        server: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] 
+    
+    steps:
+      - name: Installeer LiveKit CLI
+        run: curl -sSL https://get.livekit.io/cli | bash
+        
+      - name: Start 200 Kijkers per server
+        run: |
+          lk load-test \
+            --url ws://51.77.190.100:7880 \
+            --api-key babeexkey \
+            --api-secret 67f3100a79c6f6ddc7e60800a59dd91c867df7a0028f273bf070049ed3310967 \
+            --room load-test \
+            --video-publishers 0 \
+            --subscribers 200 \
+            --duration 1m
