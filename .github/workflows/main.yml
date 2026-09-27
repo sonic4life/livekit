@@ -3,7 +3,7 @@
 #
 # LET OP: gebruik dit alleen in een PRIVATE repo. Iedereen die dit bestand kan zien,
 # kan tokens maken voor je LiveKit-server. Vervang de keys na het testen.
-#
+#fff
 # Starten: tab Actions → "LiveKit load test" → Run workflow
 #   server  : welke LiveKit-server je test
 #   runners : aantal machines (kijkers worden verdeeld; alleen runner 1 zendt het model)
