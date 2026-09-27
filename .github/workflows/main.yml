@@ -3,7 +3,7 @@
 #
 # LET OP: gebruik dit alleen in een PRIVATE repo. Iedereen die dit bestand kan zien,
 # kan tokens maken voor je LiveKit-server. Vervang de keys na het testen.
-#fff
+#
 # Starten: tab Actions → "LiveKit load test" → Run workflow
 #   server  : welke LiveKit-server je test
 #   runners : aantal machines (kijkers worden verdeeld; alleen runner 1 zendt het model)
@@ -24,7 +24,7 @@ on:
         required: true
         default: "1"
         type: choice
-        options: ["1", "2", "4", "8", "10","16"]
+        options: ["1", "2", "4", "8", "10"]
       viewers_per_runner:
         description: "Kijkers per runner (max ~250 aanbevolen)"
         required: true
@@ -33,6 +33,12 @@ on:
         description: "Duur, bv. 5m"
         required: true
         default: "5m"
+      mode:
+        description: "one-room = 1 model met alle kijkers | room-per-runner = elk runner een eigen model (zoals de echte site)"
+        required: true
+        default: "one-room"
+        type: choice
+        options: ["one-room", "room-per-runner"]
       resolution:
         description: "Videokwaliteit (medium ≈ 540p zoals de site)"
         required: true
@@ -87,14 +93,18 @@ jobs:
         run: |
           lk --version
           echo "Server: $LIVEKIT_URL  |  room: ${{ needs.plan.outputs.room }}  |  runner ${{ matrix.runner }}"
-          if [ "${{ matrix.runner }}" = "1" ]; then
+          ROOM="${{ needs.plan.outputs.room }}"
+          if [ "${{ inputs.mode }}" = "room-per-runner" ]; then
+            PUB=1; ROOM="$ROOM-r${{ matrix.runner }}"   # elk runner: eigen model + eigen kijkers
+          elif [ "${{ matrix.runner }}" = "1" ]; then
             PUB=1
           else
             PUB=0
             sleep 20   # wacht tot runner 1 het model heeft gestart
           fi
+          echo "Mode: ${{ inputs.mode }}  room: $ROOM  publisher: $PUB"
           lk load-test \
-            --room "${{ needs.plan.outputs.room }}" \
+            --room "$ROOM" \
             --video-publishers "$PUB" \
             --subscribers "${{ inputs.viewers_per_runner }}" \
             --video-resolution "${{ inputs.resolution }}" \
@@ -109,7 +119,7 @@ jobs:
           TOTAL=$(grep -E "│ Total" result.txt | tail -1 || true)
           echo "Runner ${{ matrix.runner }}: $TOTAL"
           {
-            echo "### Runner ${{ matrix.runner }} (${{ inputs.server }})"
+            echo "### Runner ${{ matrix.runner }} (${{ inputs.server }}, ${{ inputs.mode }})"
             echo '```'
             echo "${TOTAL:-geen Total-regel gevonden (zie log)}"
             echo '```'
