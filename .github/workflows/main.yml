@@ -24,7 +24,7 @@ on:
         required: true
         default: "1"
         type: choice
-        options: ["1", "2", "4", "8", "10"]
+        options: ["1", "2", "4", "8", "10","16"]
       viewers_per_runner:
         description: "Kijkers per runner (max ~250 aanbevolen)"
         required: true
