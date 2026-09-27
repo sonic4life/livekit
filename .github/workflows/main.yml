@@ -1,1 +1,116 @@
+# LiveKit load test via GitHub Actions  (MET INGEBOUWDE CREDENTIALS)
+# Bestand in je repo:  .github/workflows/livekit-loadtest.yml
+#
+# LET OP: gebruik dit alleen in een PRIVATE repo. Iedereen die dit bestand kan zien,
+# kan tokens maken voor je LiveKit-server. Vervang de keys na het testen.
+#
+# Starten: tab Actions → "LiveKit load test" → Run workflow
+#   server  : welke LiveKit-server je test
+#   runners : aantal machines (kijkers worden verdeeld; alleen runner 1 zendt het model)
 
+name: LiveKit load test
+
+on:
+  workflow_dispatch:
+    inputs:
+      server:
+        description: "Welke LiveKit-server"
+        required: true
+        default: "peekslive"
+        type: choice
+        options: ["peekslive", "babes"]
+      runners:
+        description: "Aantal runners (1=250, 4=1000, 8=2000 kijkers bij 250 per runner)"
+        required: true
+        default: "1"
+        type: choice
+        options: ["1", "2", "4", "8", "10"]
+      viewers_per_runner:
+        description: "Kijkers per runner (max ~250 aanbevolen)"
+        required: true
+        default: "250"
+      duration:
+        description: "Duur, bv. 5m"
+        required: true
+        default: "5m"
+      resolution:
+        description: "Videokwaliteit (medium ≈ 540p zoals de site)"
+        required: true
+        default: "medium"
+        type: choice
+        options: ["low", "medium", "high"]
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+      room: ${{ steps.m.outputs.room }}
+    steps:
+      - id: m
+        run: |
+          echo "matrix=$(seq 1 ${{ inputs.runners }} | jq -s -c .)" >> "$GITHUB_OUTPUT"
+          echo "room=gh-lt-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+
+  loadtest:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJson(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Server kiezen
+        run: |
+          if [ "${{ inputs.server }}" = "babes" ]; then
+            echo "LIVEKIT_URL=ws://51.77.190.100:7880" >> "$GITHUB_ENV"
+            echo "LIVEKIT_API_KEY=babeexkey" >> "$GITHUB_ENV"
+            echo "LIVEKIT_API_SECRET=67f3100a79c6f6ddc7e60800a59dd91c867df7a0028f273bf070049ed3310967" >> "$GITHUB_ENV"
+          else
+            echo "LIVEKIT_URL=wss://rtc.peekslive.com" >> "$GITHUB_ENV"
+            echo "LIVEKIT_API_KEY=APIMcDCeJJHuLkM" >> "$GITHUB_ENV"
+            echo "LIVEKIT_API_SECRET=rDNvHCuYKsNfLQCQej3CBreY6ZQnWMYhzMWixnq1nJMB" >> "$GITHUB_ENV"
+          fi
+
+      - name: LiveKit CLI installeren
+        run: |
+          curl -sSL https://get.livekit.io/cli | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: UDP-buffers vergroten (runner mag zelf geen pakketten weggooien)
+        run: |
+          sudo sysctl -w net.core.rmem_max=26214400 net.core.rmem_default=26214400 \
+                         net.core.wmem_max=26214400 net.core.wmem_default=26214400
+
+      - name: Load test draaien
+        run: |
+          lk --version
+          echo "Server: $LIVEKIT_URL  |  room: ${{ needs.plan.outputs.room }}  |  runner ${{ matrix.runner }}"
+          if [ "${{ matrix.runner }}" = "1" ]; then
+            PUB=1
+          else
+            PUB=0
+            sleep 20   # wacht tot runner 1 het model heeft gestart
+          fi
+          lk load-test \
+            --room "${{ needs.plan.outputs.room }}" \
+            --video-publishers "$PUB" \
+            --subscribers "${{ inputs.viewers_per_runner }}" \
+            --video-resolution "${{ inputs.resolution }}" \
+            --video-codec vp8 \
+            --num-per-second 5 \
+            --duration "${{ inputs.duration }}" \
+            --identity-prefix "gh${{ matrix.runner }}" 2>&1 | tee result.txt
+
+      - name: Samenvatting
+        if: always()
+        run: |
+          TOTAL=$(grep -E "│ Total" result.txt | tail -1 || true)
+          echo "Runner ${{ matrix.runner }}: $TOTAL"
+          {
+            echo "### Runner ${{ matrix.runner }} (${{ inputs.server }})"
+            echo '```'
+            echo "${TOTAL:-geen Total-regel gevonden (zie log)}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
